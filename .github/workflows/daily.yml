@@ -15,11 +15,42 @@ on:
         default: "0"
 
 jobs:
+  # Pick today's 6 topics from trending news + competitor channels first.
+  # If this job fails, the video jobs still run (pool fallback).
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Pick today's 6 trending topics
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python trends.py
+
+      - name: Share today's topics with the video jobs
+        uses: actions/upload-artifact@v4
+        with:
+          name: topics-today
+          path: topics_today.json
+          retention-days: 2
+
   build-and-upload:
+    needs: plan
     runs-on: ubuntu-latest
     timeout-minutes: 150
     # Manual dispatch runs only the selected index; schedule runs all 6.
-    if: ${{ github.event_name != 'workflow_dispatch' || matrix.index == fromJSON(github.event.inputs.index) }}
+    # always() so a failed plan job still lets videos build (pool fallback).
+    if: ${{ always() && (github.event_name != 'workflow_dispatch' || matrix.index == fromJSON(github.event.inputs.index)) }}
     strategy:
       fail-fast: false
       matrix:
@@ -38,6 +69,12 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r requirements.txt
+
+      - name: Download today's topics
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: topics-today
 
       - name: Build and upload video ${{ matrix.index }}
         env:
