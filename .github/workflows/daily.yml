@@ -5,8 +5,9 @@ name: Daily YouTube Videos
 # secrets) so Actions minutes are unlimited.
 on:
   schedule:
-    # 04:00 UTC = 09:30 IST every day
-    - cron: "0 4 * * *"
+    # 01:00 UTC = 06:30 IST every day (build finishes before the first
+    # video's 07:00 IST publish time)
+    - cron: "0 1 * * *"
   workflow_dispatch:
     inputs:
       index:
@@ -68,8 +69,13 @@ jobs:
       - name: FFmpeg check
         run: which ffmpeg || sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
 
+      - name: Install espeak-ng (Kokoro voice needs it)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq espeak-ng
+
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install --timeout 300 --retries 5 torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt
 
       - name: Download today's topics
         uses: actions/download-artifact@v4
