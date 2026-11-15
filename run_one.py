@@ -34,11 +34,13 @@ from upload import upload_full
 
 
 def publish_at_for(index):
-    """Stagger releases through the day: 09:30 IST + 2h per video.
-    Returns an RFC3339 UTC timestamp, or None to publish immediately."""
+    """Stagger releases through the day: 07:00 IST + 3h per video
+    (07:00, 10:00, 13:00, 16:00, 19:00, 22:00 IST) so all 6 land on the
+    same day. Returns an RFC3339 UTC timestamp, or None to publish
+    immediately."""
     base = datetime.datetime.now(datetime.timezone.utc).replace(
-        hour=4, minute=0, second=0, microsecond=0)  # 09:30 IST = 04:00 UTC
-    target = base + datetime.timedelta(hours=2 * index)
+        hour=1, minute=30, second=0, microsecond=0)  # 07:00 IST = 01:30 UTC
+    target = base + datetime.timedelta(hours=3 * index)
     if target <= datetime.datetime.now(datetime.timezone.utc):
         target = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=5)
     return target.strftime("%Y-%m-%dT%H:%M:%SZ")

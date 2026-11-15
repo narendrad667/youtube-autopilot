@@ -1,10 +1,12 @@
 """Video assembly for the YouTube autopilot — FFmpeg only, no paid tools.
 
-Video: every scene image gets a slow Ken Burns move (alternating zoom-in /
-zoom-out keyframes) and 0.6s crossfades between images, exactly like the
-earlier What If videos. One image shows for ~5 seconds (4 images per scene,
-scene-matched), and the holds are sized to the narration so the video
-length equals the spoken length.
+Video: every scene image gets a VISIBLE Ken Burns move — fast zoom-in /
+zoom-out (1.0x to 1.3x) and slow pans (left, right, up, down) cycling
+across images, plus a slight saturation/contrast punch — so the video
+never looks static. 0.6s crossfades between images, exactly like the
+earlier What If videos. One image shows for ~5 seconds (4 images per
+scene, scene-matched), and the holds are sized to the narration so the
+video length equals the spoken length.
 Audio: scene narration (concatenated) + a synthesised ambient music bed
 (sine pads + brown noise — original, never a paid library track) + a short
 synthesised SFX at each scene start, matched to the scene's SFX cue.
@@ -143,11 +145,14 @@ def assemble(scene_images, timings, scenes, work_dir, out_path,
         sfx_files.append((path, scene_starts[i]))
 
     # --- build ffmpeg command ---
+    # NOTE: each image is fed ONCE (no -loop). zoompan's d=<frames> then
+    # generates the whole hold from that single frame, with 'on' counting
+    # 0..frames-1 so the zoom/pan actually animates. With -loop 1 the
+    # zoompan state reset every frame and the picture was frozen — the
+    # Ken Burns never moved in any earlier video.
     cmd = ["ffmpeg", "-y", "-v", "error"]
     for j, img in enumerate(images):
-        seg = base[j] + (XFADE if j < n_img - 1 else 0.0)
-        cmd += ["-loop", "1", "-framerate", str(FPS), "-t", "%.3f" % seg,
-                "-i", img]
+        cmd += ["-i", img]
     audio_inputs = []
     for t in timings:
         audio_inputs.append(t["audio"])
@@ -160,18 +165,39 @@ def assemble(scene_images, timings, scenes, work_dir, out_path,
         cmd += ["-i", path]
 
     filters = []
-    # video: zoompan per image (alternate zoom-in / zoom-out)
+    # video: Ken Burns per image — VISIBLE motion, 6 move types cycling
+    # (fast zoom-in, fast zoom-out, pan right/left/down/up + slow zoom).
+    # Pan distance uses the frame count of this image's hold so the move
+    # spans the whole hold.
     for j in range(n_img):
-        if j % 2 == 0:
-            zoom = "min(zoom+0.0012,1.18)"
-        else:
-            zoom = "if(eq(on,0),1.18,max(zoom-0.0012,1.0))"
+        seg = base[j] + (XFADE if j < n_img - 1 else 0.0)
+        frames = max(1, int(round(seg * FPS)))
+        move = j % 6
+        cx, cy = "iw/2-(iw/zoom/2)", "ih/2-(ih/zoom/2)"
+        if move == 0:      # zoom in (fast, visible)
+            zoom, x, y = "min(zoom+0.0025,1.30)", cx, cy
+        elif move == 1:    # zoom out
+            zoom, x, y = "if(eq(on,0),1.30,max(zoom-0.0025,1.0))", cx, cy
+        elif move == 2:    # pan right + slow zoom
+            zoom = "min(zoom+0.0012,1.15)"
+            x, y = "(iw-iw/zoom)*on/%d" % frames, cy
+        elif move == 3:    # pan left + slow zoom
+            zoom = "min(zoom+0.0012,1.15)"
+            x, y = "(iw-iw/zoom)*(1-on/%d)" % frames, cy
+        elif move == 4:    # pan down + slow zoom
+            zoom = "min(zoom+0.0012,1.15)"
+            x, y = cx, "(ih-ih/zoom)*on/%d" % frames
+        else:              # pan up + slow zoom
+            zoom = "min(zoom+0.0012,1.15)"
+            x, y = cx, "(ih-ih/zoom)*(1-on/%d)" % frames
         filters.append(
             "[%d:v]scale=1920:1080:force_original_aspect_ratio=increase,"
             "crop=1920:1080,"
-            "zoompan=z='%s':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:"
-            "s=%dx%d:fps=%d,format=yuv420p,settb=AVTB[v%d]"
-            % (j, zoom, W, H, FPS, j))
+            "zoompan=z='%s':x='%s':y='%s':d=%d:"
+            "s=%dx%d:fps=%d,"
+            "eq=saturation=1.12:contrast=1.06,"
+            "format=yuv420p,settb=AVTB[v%d]"
+            % (j, zoom, x, y, frames, W, H, FPS, j))
     # xfade chain
     cur = "v0"
     acc_dur = base[0]

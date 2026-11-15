@@ -3,8 +3,11 @@
 Primary: Microsoft Edge TTS (natural neural voices, free, no API key).
   Works on GitHub Actions runners (direct internet). May fail behind strict
   egress proxies — the pipeline then falls back automatically.
-Fallback: gTTS (Google Translate TTS, free, no key, plain HTTPS).
-  Less natural, but always available as a safety net.
+Fallback 1: Kokoro TTS (free open-source neural voice, hexgrad/Kokoro-82M).
+  Natural American male voice (am_adam), runs locally on CPU, no key.
+  Needs espeak-ng installed and the ~310 MB model downloaded on first use.
+Fallback 2: gTTS (Google Translate TTS, free, no key, plain HTTPS).
+  Robotic, last resort only — the voice should never end up robotic.
 Optional: Google Cloud TTS if GOOGLE_TTS_API_KEY is set (1M chars/month
   free tier) — not required.
 
@@ -17,7 +20,13 @@ import os
 import subprocess
 
 DEFAULT_VOICE = os.environ.get("TTS_VOICE", "en-US-GuyNeural")
+KOKORO_VOICE = os.environ.get("KOKORO_VOICE", "am_adam")
 GTTS_LANG = os.environ.get("TTS_LANG", "en")
+# TTS_ENGINE=kokoro forces the Kokoro path (used for local testing).
+FORCE_ENGINE = os.environ.get("TTS_ENGINE", "")
+
+_KOKORO_PIPE = None
+_KOKORO_FAILED = False
 
 
 def probe_duration(path):
@@ -49,19 +58,61 @@ def gtts_scene(text, lang, out_path):
     return os.path.exists(out_path) and os.path.getsize(out_path) > 1000
 
 
+def kokoro_scene(text, voice, out_path):
+    """Narrate with Kokoro (natural, free, local CPU). The pipeline object
+    is loaded once and reused for all scenes. Returns True on success."""
+    global _KOKORO_PIPE, _KOKORO_FAILED
+    if _KOKORO_FAILED:
+        return False
+    try:
+        if _KOKORO_PIPE is None:
+            from kokoro import KPipeline
+            _KOKORO_PIPE = KPipeline(lang_code="a")
+        import numpy as np
+        import soundfile as sf
+        chunks = []
+        for _, _, audio in _KOKORO_PIPE(text, voice=voice):
+            chunks.append(audio)
+        if not chunks:
+            return False
+        tmp_wav = out_path + ".kokoro.wav"
+        sf.write(tmp_wav, np.concatenate(chunks), 24000)
+        r = subprocess.run(
+            ["ffmpeg", "-y", "-v", "error", "-i", tmp_wav,
+             "-codec:a", "libmp3lame", "-q:a", "3", out_path],
+            capture_output=True, text=True)
+        os.remove(tmp_wav)
+        return r.returncode == 0 and os.path.exists(out_path) \
+            and os.path.getsize(out_path) > 1000
+    except Exception as e:
+        print("Kokoro failed (%s)" % e)
+        _KOKORO_FAILED = True
+        return False
+
+
 def synth_scene(text, voice, out_path, index):
-    """Narrate one scene. Edge TTS first, gTTS fallback. Returns (ok, engine)."""
-    try:
-        if edge_tts_scene(text, voice, out_path):
-            return True, "edge-tts"
-        print("Scene %d: edge-tts produced nothing, trying gTTS..." % index)
-    except Exception as e:
-        print("Scene %d: edge-tts failed (%s), trying gTTS..." % (index, e))
-    try:
-        if gtts_scene(text, GTTS_LANG, out_path):
-            return True, "gtts"
-    except Exception as e:
-        print("Scene %d: gTTS failed too: %s" % (index, e))
+    """Narrate one scene. Edge TTS first, Kokoro fallback, gTTS last
+    resort. Returns (ok, engine)."""
+    order = ["edge-tts", "kokoro", "gtts"]
+    if FORCE_ENGINE == "kokoro":
+        order = ["kokoro", "gtts"]
+    elif FORCE_ENGINE == "gtts":
+        order = ["gtts"]
+    for engine in order:
+        try:
+            if engine == "edge-tts":
+                ok = edge_tts_scene(text, voice, out_path)
+            elif engine == "kokoro":
+                ok = kokoro_scene(text, KOKORO_VOICE, out_path)
+            else:
+                ok = gtts_scene(text, GTTS_LANG, out_path)
+            if ok:
+                return True, engine
+            print("Scene %d: %s produced nothing, trying next..."
+                  % (index, engine))
+        except Exception as e:
+            print("Scene %d: %s failed (%s), trying next..."
+                  % (index, engine, e))
     return False, "none"
 
 
