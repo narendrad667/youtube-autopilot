@@ -1,0 +1,60 @@
+name: Daily YouTube Videos
+
+# 6 videos/day, each 4-5 min, What If style. Fully free, zero Muse tokens.
+# Runs on GitHub's free servers. Repo must stay PUBLIC (code only, no
+# secrets) so Actions minutes are unlimited.
+on:
+  schedule:
+    # 04:00 UTC = 09:30 IST every day
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+    inputs:
+      index:
+        description: "Video index 0-5 (manual single-video test)"
+        required: false
+        default: "0"
+
+jobs:
+  build-and-upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    # Manual dispatch runs only the selected index; schedule runs all 6.
+    if: ${{ github.event_name != 'workflow_dispatch' || matrix.index == fromJSON(github.event.inputs.index) }}
+    strategy:
+      fail-fast: false
+      matrix:
+        index: [0, 1, 2, 3, 4, 5]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: FFmpeg check
+        run: which ffmpeg || sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Build and upload video ${{ matrix.index }}
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+        run: python run_one.py "${{ matrix.index }}"
+
+      - name: Keep video + result as artifact (7 days)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-${{ matrix.index }}
+          path: |
+            work_${{ matrix.index }}/video.mp4
+            work_${{ matrix.index }}/thumbnail.jpg
+            work_${{ matrix.index }}/result.json
+          retention-days: 7
