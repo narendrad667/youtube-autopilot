@@ -93,5 +93,6 @@ jobs:
           path: |
             work_${{ matrix.index }}/video.mp4
             work_${{ matrix.index }}/thumbnail.jpg
+            work_${{ matrix.index }}/captions.srt
             work_${{ matrix.index }}/result.json
           retention-days: 7
