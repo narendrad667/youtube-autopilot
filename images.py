@@ -129,20 +129,23 @@ def fetch_image(prompt, out_path, pexels_key=None, attempts=4):
 
 
 def fetch_scene_images(scenes, out_dir, pexels_key=None):
-    """Fetch 2 images per scene. Returns list of image paths in order."""
+    """Fetch one image per image prompt (4 per scene = one every ~5s).
+    Returns a list of lists: scene_images[scene][image]."""
     os.makedirs(out_dir, exist_ok=True)
-    paths = []
+    all_images = []
     for i, scene in enumerate(scenes):
-        for j, prompt in enumerate(scene["image_prompts"][:2]):
+        scene_paths = []
+        for j, prompt in enumerate(scene["image_prompts"]):
             path = os.path.join(out_dir, "scene_%02d_img%d.jpg" % (i, j))
             ok, engine = fetch_image(prompt, path, pexels_key)
             if not ok:
                 raise RuntimeError("Image failed: scene %d img %d (%s)"
                                    % (i, j, prompt[:60]))
             print("Scene %02d img %d: %s" % (i, j, engine))
-            paths.append(path)
+            scene_paths.append(path)
             time.sleep(POLLINATIONS_PACE_S)
-    return paths
+        all_images.append(scene_paths)
+    return all_images
 
 
 if __name__ == "__main__":

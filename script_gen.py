@@ -13,7 +13,8 @@ Output contract (JSON):
   "total_words": 712,
   "scenes": [
     {"narration": "...",            # ~45-55 words, ~18-22 seconds spoken
-     "image_prompts": ["...", "..."],  # 2 cinematic prompts, NO text in image
+     "image_prompts": ["...", "...", "...", "..."],
+     # 4 cinematic prompts, NO text in image — one per ~5 seconds
      "sfx": "low rumble"}           # short SFX cue for this scene
   ]
 }
@@ -47,7 +48,7 @@ RETENTION STRUCTURE (mandatory):
 
 SCENES: exactly 13 scenes. For each scene give:
 - "narration": 45-55 words of spoken script.
-- "image_prompts": exactly 2 prompts for cinematic photorealistic 16:9 images that illustrate the narration. No text, no words, no letters, no cartoon, no stick figures — realistic cinematic photography style.
+- "image_prompts": exactly 4 prompts for cinematic photorealistic 16:9 images that illustrate the narration, one for roughly every 5 seconds of the scene, each showing a different moment or angle of the scene. No text, no words, no letters, no cartoon, no stick figures — realistic cinematic photography style.
 - "sfx": one short sound-effect cue (e.g. "deep rumble", "rain falling", "heartbeat", "wind gust", "silence").
 
 ALSO GIVE:
@@ -57,7 +58,7 @@ ALSO GIVE:
 - "thumbnail_text": 3-5 bold words for the thumbnail.
 
 Return ONLY a JSON object, no markdown fences, no extra text. Keys in this order:
-{{"topic": "...", "title": "...", "description": "...", "tags": [...], "thumbnail_text": "...", "total_words": 0, "scenes": [{{"narration": "...", "image_prompts": ["...", "..."], "sfx": "..."}}]}}
+{{"topic": "...", "title": "...", "description": "...", "tags": [...], "thumbnail_text": "...", "total_words": 0, "scenes": [{{"narration": "...", "image_prompts": ["...", "...", "...", "..."], "sfx": "..."}}]}}
 
 TOPIC RULE: the topic must be a fresh "What If" question about Earth or nature. Do NOT reuse any of these already-used topics: {used_topics}
 """
@@ -149,6 +150,28 @@ def generate_script(api_key, used_topics, model=DEFAULT_MODEL, topic=None):
             time.sleep(5)
             continue
         return script
+    return None
+
+
+def generate_fresh_topic(api_key, used_topics, model=DEFAULT_MODEL):
+    """Ask Gemini for ONE fresh What If topic not in used_topics.
+    Used after the 102-topic pool has cycled once (day 18+).
+    Returns the topic string or None."""
+    prompt = (
+        "Give me ONE fresh, surprising 'What If' question about Earth or "
+        "nature for a YouTube video. It must NOT be any of these already-used "
+        "topics: " + ", ".join(used_topics) +
+        ". Return ONLY the question itself, nothing else. It must start with "
+        "'What If' and end with '?'."
+    )
+    for attempt in (1, 2):
+        text = _call_gemini(prompt, api_key, model)
+        if text:
+            topic = text.strip().strip('"').strip().split("\n")[0].strip()
+            if topic.lower().startswith("what if") and topic.endswith("?"):
+                return topic
+        print("Fresh-topic attempt %d failed, retrying..." % attempt)
+        time.sleep(5)
     return None
 
 

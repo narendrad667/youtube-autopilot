@@ -19,12 +19,27 @@ setup, runs forever on its own like the Blogger auto-news system.
 ## Pipeline (one video = one GitHub Actions job, 6 parallel jobs/day)
 1. `script_gen.py` — Gemini free API (gemini-3.5-flash-lite) writes: topic,
    script with hook structure, scene-by-scene image prompts + SFX cues,
-   title, description, tags, thumbnail text. De-dup via used-topics file.
+   title, description, tags, thumbnail text. Topics: 102 in topics.json,
+   rotated by date (6/day, no repeat for 17 days from go-live 2026-11-16);
+   from day 18 the pool cycles, so run_one.py asks Gemini for a fresh topic
+   not in the pool (generate_fresh_topic); if that fails it reuses the pool
+   topic rather than skipping the video.
+   **Images: 4 prompts per scene = one image every ~5 seconds**, each
+   scene-matched (user's spec, 2026-11-15).
+2. `trends.py` — daily topic planner (user's spec, 2026-11-15): reads
+   competitor YouTube RSS feeds (What If UCphTF9wHwhCt-BzIq-s4V-g,
+   Kurzgesagt UCsXVk37bltHxD1rDPwtNM8Q, RealLifeLore UCP5tjEmvPItGyLhmjdwP7Ww)
+   + Google News science RSS, and Gemini picks 6 fresh topics for today
+   inspired by trending stories and competitor uploads (never a copy of a
+   competitor title). Runs as the `plan` job; video jobs read
+   topics_today.json and fall back to the pool if it is missing.
+   Feed IDs verified 2026-11-15 (all 3 feeds + news RSS return titles).
 2. `tts.py` — Edge TTS (Microsoft, free, no key) narrates scene by scene.
 3. `images.py` — Pollinations (free, no key) AI images per scene, 4 retries
    with backoff (the service 503s under load — seen in local test 2026-11-15),
    then Openverse (free, no key) real photos, then Pexels (free API key)
    as the last fallback. 8s pacing between Pollinations requests.
+   4 images per scene (~52/video) since the 5-second image rule.
 4. `assemble.py` — FFmpeg: zoompan keyframes + crossfade + narration +
    music + SFX, 1280x720 30fps, H.264.
 5. `thumbnail.py` — Pillow 1280x720 bold-text thumbnail.

@@ -1,11 +1,13 @@
 """One-video orchestrator for the YouTube autopilot.
 
 Usage: python run_one.py <job_index 0-5> [work_dir]
-  - Picks today's topic by rotation: topics[(day_number*6 + index) % N]
-    (no cross-job state, no races between the 6 parallel jobs).
+  - Topic: today's trending pick from topics_today.json (written by the
+    plan job from competitor RSS + trending news); falls back to the
+    102-topic pool rotation, then to a Gemini fresh topic.
   - Gemini writes the script (super hook + hook every ~60s).
   - Edge TTS (fallback gTTS) narrates scene by scene.
-  - Pollinations fetches 2 images per scene (Pexels fallback if key set).
+  - Pollinations fetches 4 images per scene — one every ~5s
+    (Openverse/Pexels fallback if a fetch fails).
   - FFmpeg assembles the 4-5 min video with Ken Burns + SFX + music bed.
   - Pillow builds the thumbnail.
   - YouTube Data API uploads it (private + staggered publishAt).
@@ -23,20 +25,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from assemble import assemble
 from images import fetch_scene_images
-from script_gen import generate_script
+from script_gen import generate_script, generate_fresh_topic
 from thumbnail import make_thumbnail
+from trends import pick_topic, TOPICS_FILE, TODAY_FILE
 from tts import narrate_scenes
 from upload import upload_full
-
-TOPICS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                           "topics.json")
-
-
-def pick_topic(index):
-    with open(TOPICS_FILE) as f:
-        topics = json.load(f)
-    day_number = datetime.date.today().toordinal()
-    return topics[(day_number * 6 + index) % len(topics)]
 
 
 def publish_at_for(index):
@@ -55,10 +48,32 @@ def main():
     work_dir = sys.argv[2] if len(sys.argv) > 2 else "work_%d" % index
     os.makedirs(work_dir, exist_ok=True)
 
-    topic = pick_topic(index)
-    print("Job %d — topic: %s" % (index, topic))
-
     gemini_key = os.environ["GEMINI_API_KEY"]
+    topic = None
+    if os.path.exists(TODAY_FILE):
+        try:
+            with open(TODAY_FILE) as f:
+                today_topics = json.load(f)
+            topic = today_topics[index]
+            print("Job %d — trending topic: %s" % (index, topic))
+        except Exception as e:
+            print("topics_today.json unusable (%s), using pool." % e)
+    if not topic:
+        topic, cycle = pick_topic(index)
+        if cycle >= 1:
+            # The 102-topic pool has cycled: ask Gemini for a fresh topic
+            # not in the pool. If that fails, reuse the pool topic (a repeat
+            # beats a missing video).
+            with open(TOPICS_FILE) as f:
+                pool = json.load(f)
+            fresh = generate_fresh_topic(gemini_key, pool)
+            if fresh:
+                print("Pool cycled — fresh topic from Gemini: %s" % fresh)
+                topic = fresh
+            else:
+                print("Fresh-topic call failed — reusing pool topic: %s" % topic)
+        print("Job %d — pool topic: %s" % (index, topic))
+
     script = generate_script(gemini_key, used_topics=[], topic=topic)
     if not script:
         sys.exit("Script generation failed.")
@@ -70,14 +85,14 @@ def main():
     timings = narrate_scenes(scenes, audio_dir)
 
     img_dir = os.path.join(work_dir, "images")
-    images = fetch_scene_images(scenes, img_dir,
-                                pexels_key=os.environ.get("PEXELS_API_KEY"))
+    scene_images = fetch_scene_images(
+        scenes, img_dir, pexels_key=os.environ.get("PEXELS_API_KEY"))
 
     video_path = os.path.join(work_dir, "video.mp4")
-    assemble(images, timings, scenes, work_dir, video_path)
+    assemble(scene_images, timings, scenes, work_dir, video_path)
 
     thumb_path = os.path.join(work_dir, "thumbnail.jpg")
-    make_thumbnail(images[0], script["thumbnail_text"], thumb_path)
+    make_thumbnail(scene_images[0][0], script["thumbnail_text"], thumb_path)
 
     description = script["description"] + (
         "\n\nWhat would YOU want us to explore next? Tell us in the comments!"

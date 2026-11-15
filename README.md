@@ -5,16 +5,19 @@ Nature). Once set up, it runs every day on GitHub's free servers and posts 6
 videos (4-5 min each) to YouTube — no manual work, no Muse tokens.
 
 ## How it works
-1. **Script** — Gemini free API writes a ~700-word script with a super hook
+1. **Topics (plan job, once a day)** — reads competitor YouTube RSS feeds
+   (What If, Kurzgesagt, RealLifeLore) + trending science news, and Gemini
+   picks 6 fresh topics for today. Falls back to the 102-topic pool.
+2. **Script** — Gemini free API writes a ~700-word script with a super hook
    in the first 10 seconds and a mini-hook every ~60 seconds.
-2. **Voice** — Edge TTS (free, no key) narrates scene by scene; gTTS is the
+3. **Voice** — Edge TTS (free, no key) narrates scene by scene; gTTS is the
    automatic fallback.
-3. **Images** — Pollinations (free, no key) generates 2 cinematic images per
-   scene; Pexels (free API) is the fallback.
-4. **Video** — FFmpeg: slow Ken Burns zoom/pan on every image, crossfades,
+4. **Images** — Pollinations (free, no key) generates 4 cinematic images per
+   scene (one every ~5 seconds); Openverse / Pexels are the fallbacks.
+5. **Video** — FFmpeg: slow Ken Burns zoom/pan on every image, crossfades,
    synthesised music bed + SFX per scene, 1280x720 30fps.
-5. **Thumbnail** — Pillow, bold text.
-6. **Upload** — YouTube Data API v3, staggered through the day.
+6. **Thumbnail** — Pillow, bold text.
+7. **Upload** — YouTube Data API v3, staggered through the day.
 
 ## Setup (one time)
 - GitHub repo (public, so Actions minutes are unlimited) + Secrets:

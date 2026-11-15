@@ -2,7 +2,8 @@
 
 Video: every scene image gets a slow Ken Burns move (alternating zoom-in /
 zoom-out keyframes) and 0.6s crossfades between images, exactly like the
-earlier What If videos. Image holds are sized to the narration so the video
+earlier What If videos. One image shows for ~5 seconds (4 images per scene,
+scene-matched), and the holds are sized to the narration so the video
 length equals the spoken length.
 Audio: scene narration (concatenated) + a synthesised ambient music bed
 (sine pads + brown noise — original, never a paid library track) + a short
@@ -104,18 +105,22 @@ def synth_bed(duration, out_path):
     run(cmd, "music bed")
 
 
-def assemble(images, timings, scenes, work_dir, out_path):
-    """images: 2 per scene, in order. timings: [{duration}] per scene.
-    scenes: script scenes (for SFX cues). Builds out_path mp4."""
+def assemble(scene_images, timings, scenes, work_dir, out_path):
+    """scene_images: list of lists (one list per scene, ~4 images each).
+    timings: [{duration}] per scene. scenes: script scenes (for SFX cues).
+    Each image holds for scene_duration / images_in_scene (~5s).
+    Builds out_path mp4."""
     n_scenes = len(timings)
-    assert len(images) == 2 * n_scenes, "need 2 images per scene"
+    assert len(scene_images) == n_scenes, "need one image list per scene"
+    images = [p for scene in scene_images for p in scene]
     total = sum(t["duration"] for t in timings)
     print("Assembling %.1fs video from %d images" % (total, len(images)))
 
-    # --- base hold durations (2 images per scene) ---
+    # --- base hold durations (scene duration split across its images) ---
     base = []
-    for t in timings:
-        base += [t["duration"] / 2.0, t["duration"] / 2.0]
+    for i, t in enumerate(timings):
+        k = len(scene_images[i])
+        base += [t["duration"] / k] * k
     n_img = len(images)
 
     # --- synthesise bed + SFX files ---
