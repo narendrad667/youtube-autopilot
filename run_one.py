@@ -24,6 +24,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from assemble import assemble
+from captions import write_srt
 from images import fetch_scene_images
 from script_gen import generate_script, generate_fresh_topic
 from thumbnail import make_thumbnail
@@ -84,12 +85,17 @@ def main():
     audio_dir = os.path.join(work_dir, "audio")
     timings = narrate_scenes(scenes, audio_dir)
 
+    # Burned-in captions from the script itself (exact words, no API quota).
+    srt_path = os.path.join(work_dir, "captions.srt")
+    write_srt(scenes, timings, srt_path)
+
     img_dir = os.path.join(work_dir, "images")
     scene_images = fetch_scene_images(
         scenes, img_dir, pexels_key=os.environ.get("PEXELS_API_KEY"))
 
     video_path = os.path.join(work_dir, "video.mp4")
-    assemble(scene_images, timings, scenes, work_dir, video_path)
+    assemble(scene_images, timings, scenes, work_dir, video_path,
+             srt_path=srt_path)
 
     thumb_path = os.path.join(work_dir, "thumbnail.jpg")
     make_thumbnail(scene_images[0][0], script["thumbnail_text"], thumb_path)
@@ -102,6 +108,7 @@ def main():
         "words": script["total_words"],
         "duration_s": sum(t["duration"] for t in timings),
         "video": video_path, "thumbnail": thumb_path,
+        "captions": srt_path,
     }
     if os.environ.get("DRY_RUN") == "1":
         print("DRY RUN — skipping upload.")

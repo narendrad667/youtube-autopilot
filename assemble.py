@@ -105,10 +105,13 @@ def synth_bed(duration, out_path):
     run(cmd, "music bed")
 
 
-def assemble(scene_images, timings, scenes, work_dir, out_path):
+def assemble(scene_images, timings, scenes, work_dir, out_path,
+             srt_path=None):
     """scene_images: list of lists (one list per scene, ~4 images each).
     timings: [{duration}] per scene. scenes: script scenes (for SFX cues).
     Each image holds for scene_duration / images_in_scene (~5s).
+    srt_path: optional .srt to burn into the video as captions
+    (white DejaVu Sans, black outline, bottom-centre).
     Builds out_path mp4."""
     n_scenes = len(timings)
     assert len(scene_images) == n_scenes, "need one image list per scene"
@@ -179,6 +182,17 @@ def assemble(scene_images, timings, scenes, work_dir, out_path):
         filters.append("[%s][v%d]xfade=transition=fade:duration=%.2f:offset=%.3f[%s]"
                        % (cur, k, XFADE, offset, out_lbl))
         cur = out_lbl
+    # burned-in captions from the script's own .srt (exact words, no quota)
+    vlabel = "vout"
+    if srt_path and os.path.exists(srt_path):
+        esc = (os.path.abspath(srt_path).replace("\\", "\\\\")
+               .replace(":", "\\:").replace("'", "\\'"))
+        filters.append(
+            "[vout]subtitles='%s':force_style='FontName=DejaVu Sans,"
+            "FontSize=22,PrimaryColour=&HFFFFFF,OutlineColour=&H80000000,"
+            "BorderStyle=1,Outline=2,Shadow=0,Alignment=2,MarginV=36'[vsub]"
+            % esc)
+        vlabel = "vsub"
     # audio: resample + concat narration (no apad: apad would pad forever
     # and stall the concat filter)
     for i in range(n_audio):
@@ -201,7 +215,7 @@ def assemble(scene_images, timings, scenes, work_dir, out_path):
                    % ("".join("[%s]" % l for l in labels), len(labels),
                       max(total - 2, 0)))
     cmd += ["-filter_complex", ";".join(filters),
-            "-map", "[vout]", "-map", "[aout]",
+            "-map", "[%s]" % vlabel, "-map", "[aout]",
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
             "-pix_fmt", "yuv420p", "-r", str(FPS),
             "-c:a", "aac", "-b:a", "160k",

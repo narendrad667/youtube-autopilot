@@ -6,6 +6,10 @@ Primary: Pollinations (image.pollinations.ai, free, no key, FLUX model).
   backoff — the service 503s under load, so the fallbacks matter.
   Note: Pollinations returns 1024x576 for a 1280x720 request — still 16:9;
   the assembler scales/crops to 1280x720.
+  Watermark: Pollinations stamps a small "pollinations.ai" logo at the
+  bottom-right even with nologo=true, so every Pollinations image has its
+  bottom 7% cropped off with Pillow before use (verified: logo gone,
+  image still looks right).
 Fallback 1: Openverse (api.openverse.org, free, no key) — real CC photos.
 Fallback 2: Pexels (free API, needs PEXELS_API_KEY) — real stock photos.
 """
@@ -29,6 +33,18 @@ def _seed(prompt):
     return int(hashlib.md5(prompt.encode("utf-8")).hexdigest()[:8], 16) % 100000
 
 
+def _crop_watermark(path):
+    """Crop the bottom 7% off an image (removes the Pollinations logo
+    stamped at the bottom-right). No-op if Pillow cannot read the file."""
+    try:
+        from PIL import Image
+        img = Image.open(path).convert("RGB")
+        w, h = img.size
+        img.crop((0, 0, w, int(h * 0.93))).save(path, "JPEG", quality=90)
+    except Exception as e:
+        print("Watermark crop skipped (%s)" % e)
+
+
 def fetch_pollinations(prompt, out_path, timeout=120):
     """Download one Pollinations image. Returns True on success."""
     url = POLLINATIONS_URL.format(
@@ -48,6 +64,7 @@ def fetch_pollinations(prompt, out_path, timeout=120):
             return False
         with open(out_path, "wb") as f:
             f.write(data)
+        _crop_watermark(out_path)
         return True
     except Exception as e:
         print("Pollinations failed: %s" % e)

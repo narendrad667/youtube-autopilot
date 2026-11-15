@@ -80,3 +80,23 @@ setup, runs forever on its own like the Blogger auto-news system.
 - AI moving video (Runway/Pika/Luma free tiers give only 5-10s clips and no
   free API) — that stays a separate, mostly manual 1 Short/day at best.
 - The Facebook account attempt (2026-11-15, 'John Wick') is dropped per user.
+
+## Latest changes (2026-11-15, after repo upload)
+- Burned-in captions: `captions.py` builds an .srt from the script itself
+  (exact words; timing estimated from word counts), `assemble.py` burns it
+  in with FFmpeg subtitles (white DejaVu Sans, black outline,
+  bottom-centre). API caption upload is NOT used: 6 uploads (9600) + 6
+  thumbnails (300) = 9900/10000 quota, only 100 left, 6 captions need 300.
+  The .srt is also saved as a workflow artifact.
+- Watermark: Pollinations stamps "pollinations.ai" bottom-right despite
+  nologo=true. `images.py` now crops the bottom 7% of every Pollinations
+  image with Pillow (1024x576 -> 1024x535, verified: logo gone).
+- Nano Banana: NOT usable free — Gemini API has no free tier for image
+  models (~$0.034/image paid). Pollinations (cropped) stays primary.
+- OAuth: Web application client "YouTube Autopilot Web" (Desktop clients
+  have no redirect-URI field, so the Playground flow failed with
+  redirect_uri_mismatch). Consent screen is in Production; all 4 secrets
+  set; refresh token belongs to The Reality Shift channel.
+- Voice: production voice is Edge TTS (natural, free). Demo used robotic
+  gTTS only because this VM's proxy blocks Edge TTS. Kokoro TTS being
+  tested as a natural free fallback so the voice is never robotic.
