@@ -91,9 +91,9 @@ def kokoro_scene(text, voice, out_path):
 
 
 def synth_scene(text, voice, out_path, index):
-    """Narrate one scene. Edge TTS first, Kokoro fallback, gTTS last
-    resort. Returns (ok, engine)."""
-    order = ["edge-tts", "kokoro", "gtts"]
+    """Narrate one scene. Kokoro first (the voice the user approved),
+    Edge TTS fallback, gTTS last resort. Returns (ok, engine)."""
+    order = ["kokoro", "edge-tts", "gtts"]
     if FORCE_ENGINE == "kokoro":
         order = ["kokoro", "gtts"]
     elif FORCE_ENGINE == "gtts":
