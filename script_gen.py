@@ -38,7 +38,7 @@ GENERATE_URL = ("https://generativelanguage.googleapis.com/v1beta/models/"
 PROMPT_TEMPLATE = """Write a YouTube video script for the channel's "What If — Earth & Nature" series, in simple clear English for a general audience.
 
 TOPIC: {topic}
-LENGTH: 650-750 words of narration total (about 4.5 minutes spoken). Every scene below must be 45-55 words.
+LENGTH: at least 650 words of narration total (about 4.5 minutes spoken). Every scene below must be 50-60 words — never write a shorter scene, or the video will be too short.
 
 RETENTION STRUCTURE (mandatory):
 - Scene 1 is a SUPER HOOK: open with a shocking question or fact in the first 10 seconds that makes the viewer unable to click away.
@@ -127,7 +127,9 @@ def _parse_script(text):
 
 
 def generate_script(api_key, used_topics, model=DEFAULT_MODEL, topic=None):
-    """Generate one full video script. Retries once if too short or invalid.
+    """Generate one full video script. Retries up to 3 times if too short
+    or invalid; keeps the longest valid script and returns it if it is at
+    least 500 words (a slightly shorter video beats no video).
 
     If topic is None, the model picks a fresh one (not in used_topics).
     Returns the script dict or None.
@@ -135,7 +137,8 @@ def generate_script(api_key, used_topics, model=DEFAULT_MODEL, topic=None):
     used = ", ".join(used_topics) if used_topics else "(none yet)"
     topic_line = topic or "Pick a fresh, surprising one yourself."
     prompt = PROMPT_TEMPLATE.format(topic=topic_line, used_topics=used)
-    for attempt in (1, 2):
+    best = None
+    for attempt in (1, 2, 3, 4):
         text = _call_gemini(prompt, api_key, model)
         script = _parse_script(text)
         if script is None:
@@ -145,11 +148,16 @@ def generate_script(api_key, used_topics, model=DEFAULT_MODEL, topic=None):
         words = script["total_words"]
         print("Script: %s | %d words | %d scenes"
               % (script["title"], words, len(script["scenes"])))
-        if words < 600:
-            print("Attempt %d: too short (%d words), retrying..." % (attempt, words))
-            time.sleep(5)
-            continue
-        return script
+        if best is None or words > best["total_words"]:
+            best = script
+        if words >= 600:
+            return script
+        print("Attempt %d: too short (%d words), retrying..." % (attempt, words))
+        time.sleep(5)
+    if best is not None and best["total_words"] >= 500:
+        print("Using longest script (%d words) after 4 attempts."
+              % best["total_words"])
+        return best
     return None
 
 
